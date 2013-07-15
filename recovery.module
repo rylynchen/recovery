@@ -1,0 +1,577 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function recovery_menu() {
+  $items = array();
+  $items['admin/config/people/recovery'] = array(
+    'title' => 'Recovery',
+    'description' => 'recovery settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('recovery_setting'),
+    'access arguments' => array('administer recovery'),
+    'file' => 'recovery.admin.inc',
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['admin/structure/recovery'] = array(
+    'title' => 'Recovery',
+    'description' => 'Manage recovery',
+    'page callback' => 'recovery_manage',
+    'access arguments' => array('administer recovery'),
+    'file' => 'recovery.pages.inc',
+  );
+  $items['recovery/add'] = array(
+    'title' => 'Add Recovery',
+    'page callback' => 'recovery_add',
+    'access arguments' => array('add recovery'),
+    'file' => 'recovery.pages.inc',
+  );
+  $items['admin/structure/recovery/list'] = array(
+    'title' => 'List',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  $items['recovery/%recovery'] = array(
+    'title' => 'Recovery',
+    'page callback' => 'recovery_page_view',
+    'page arguments' => array(1),
+    'access arguments' => array('view recovery'),
+    'file' => 'recovery.pages.inc',
+  );
+  $items['recovery/%recovery/view'] = array(
+    'title' => 'View',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  $items['recovery/%recovery/edit'] = array(
+    'title' => 'Edit',
+    'page callback' => 'recovery_page_edit',
+    'page arguments' => array(1),
+    'access arguments' => array('edit recovery'),
+    'weight' => 0,
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+    'file' => 'recovery.pages.inc',
+  );
+  $items['recovery/%recovery/delete'] = array(
+    'title' => 'Delete',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('recovery_delete_confirm_form', 1),
+    'access arguments' => array('delete recovery'),
+    'weight' => 1,
+    'type' => MENU_LOCAL_TASK,
+    'context' => MENU_CONTEXT_INLINE,
+    'file' => 'recovery.pages.inc',
+  );
+  $items['recovery/reset/%recovery_encode'] = array(
+    'title' => t('找回密码'),
+    'description' => t('找回密码'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('recovery_reset', 2),
+    'access callback' => 'recovery_access',
+    'access arguments' => array('reset', 2),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'recovery.pages.inc',
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function recovery_permission() {
+  return array(
+    'administer recovery' => array(
+      'title' => t('Administer recoveries'),
+      'description' => t('Administer entitiy recoveries.'),
+    ),
+    'add recovery' => array(
+      'title' => t('Add recovery'),
+      'description' => t('Add entitiy recoveries.'),
+    ),
+    'edit recovery' => array(
+      'title' => t('Edit All recoveries'),
+      'description' => t('Edit all entitiy recoveries.'),
+    ),
+    'view recovery' => array(
+      'title' => t('View All recoveries'),
+      'description' => t('View entitiy recoveries.'),
+    ),
+    'delete recovery' => array(
+      'title' => t('Delete All recoveries'),
+      'description' => t('Delete all entitiy recoveries.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_entity_info().
+ */
+function recovery_entity_info() {
+  $return = array(
+    'recovery' => array(
+      'label' => t('recovery'),
+      'plural label' => t('Recoveries'),
+      'description' => t('recovery entity.'),
+      'entity class' => 'recovery',
+      'controller class' => 'EntityAPIController',
+      'base table' => 'recovery',
+      'fieldable' => TRUE,
+      'view modes' => array(
+        'full' => array(
+          'label' => t('recovery'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'entity keys' => array(
+        'id' => 'rid',
+      ),
+      'bundles' => array(
+        'recovery' => array(
+          'label' => t('recovery'),
+          'admin' => array(
+            'path' => 'admin/structure/recovery',
+            'access arguments' => array('administer recovery'),
+          ),
+        ),
+      ),
+      'uri callback' => 'entity_class_uri',
+      'access callback' => 'recovery_access',
+      'module' => 'recovery',
+      'metadata controller class' => 'RecoveryMetadataController'
+    ),
+  );
+  return $return;
+}
+
+/**
+ * Implements hook_admin_paths().
+ */
+function recovery_admin_paths() {
+  if (variable_get('node_admin_theme')) {
+    $paths = array(
+      'recovery/add' => TRUE,
+      'recovery/*' => TRUE,
+      'recovery/*/edit' => TRUE,
+      'recovery/*/delete' => TRUE,
+    );
+    return $paths;
+  }
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function recovery_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'recovery') . '/views',
+  );
+}
+
+/**
+ * Determines whether the given user has access to a recovery.
+ *
+ * @param $op
+ *   The operation being performed. One of 'view', 'update', 'create', 'delete'
+ *   or just 'edit' (being the same as 'create' or 'update').
+ * @param $recovery
+ *   Optionally to check access for. If nothing is given, access for
+ *   all recoveries is determined.
+ * @param $account
+ *   The user to check for. Leave it to NULL to check for the global user.
+ * @return boolean
+ *   Whether access is allowed or not.
+ */
+function recovery_access($op, $recovery = NULL, $account = NULL) {
+  if ($op == 'reset') {
+    return time() <= $recovery->expiry && $recovery->status == 0;
+  }
+  if ($op == 'find') {
+    return !user_is_logged_in();
+  }
+
+  if (user_access('administer recovery', $account)) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+/**
+ * Fetch a recovery object.
+ *
+ * @param $rid
+ *   Integer specifying the recovery id.
+ * @param $reset
+ *   A boolean indicating that the internal cache should be reset.
+ * @return
+ *   A fully-loaded $recovery object or FALSE if it cannot be loaded.
+ *
+ * @see recovery_load_multiple()
+ */
+function recovery_load($rid, $reset = FALSE) {
+  $recoveries = recovery_load_multiple(array($rid), array(), $reset);
+  return reset($recoveries);
+}
+
+/**
+ * Load multiple recoveries based on certain conditions.
+ *
+ * @param $rids
+ *   An array of recovery IDs.
+ * @param $conditions
+ *   An array of conditions to match against the {recovery} table.
+ * @param $reset
+ *   A boolean indicating that the internal cache should be reset.
+ * @return
+ *   An array of recovery objects, indexed by pid.
+ *
+ * @see entity_load()
+ * @see recovery_load()
+ */
+function recovery_load_multiple($rids = array(), $conditions = array(), $reset = FALSE) {
+  return entity_load('recovery', $rids, $conditions, $reset);
+}
+
+/**
+ * Fetch a recovery object by code.
+ *
+ * @param $code
+ *   Integer specifying the recovery code.
+ *
+ * @see recovery_load_multiple()
+ */
+function recovery_load_by_code($code) {
+  $cache = &drupal_static(__FUNCTION__, array());
+  if (!isset($cache[$code])) {
+    $recovery = recovery_load_multiple(FALSE, array('code' => $code));
+    $cache[$code] = reset($recovery);
+    return $cache[$code];
+  }
+  return $cache[$code];
+}
+
+/**
+ * Load recovery by encode.
+ *
+ * @param $encode
+ */
+function recovery_encode_load($encode) {
+  $code = or_base_decode_str($encode);
+  return recovery_load_by_code($code);
+}
+
+/**
+ * Deletes a recovery.
+ */
+function recovery_delete(recovery $recovery) {
+  $recovery->delete();
+}
+
+/**
+ * Delete multiple recovery.
+ *
+ * @param $rids
+ *   An array of recovery IDs.
+ */
+function recovery_delete_multiple(array $rids) {
+  entity_get_controller('recovery')->delete($rids);
+}
+
+/**
+ * Create a new recovery object.
+ */
+function recovery_create(array $values = array()) {
+  return new recovery($values);
+}
+
+/**
+ * Saves a recovery to the database.
+ *
+ * @param $recovery
+ *   The recovery object.
+ */
+function recovery_save(recovery $recovery) {
+  return $recovery->save();
+}
+
+/**
+ * The class used for recovery entities.
+ */
+class recovery extends Entity {
+
+  /**
+   * The recovery id.
+   *
+   * @var integer
+   */
+  public $rid;
+
+  /**
+   * The recovery uid.
+   *
+   * @var integer
+   */
+  public $uid;
+
+  /**
+   * The recovery type.
+   *
+   * @var varchar
+   */
+  public $type;
+
+  /**
+   * The recovery code.
+   *
+   * @var varchar
+   */
+  public $code;
+
+  /**
+   * The recovery created.
+   *
+   * @var integer
+   */
+  public $created;
+
+  /**
+   * The recovery expiry.
+   *
+   * @var integer
+   */
+  public $expiry;
+
+  /**
+   * The recovery status.
+   *
+   * @var integer
+   */
+  public $status;
+
+  public function __construct($values = array()) {
+    parent::__construct($values, 'recovery');
+  }
+
+  protected function defaultLabel() {
+    return $this->path;
+  }
+
+  protected function defaultUri() {
+    return array('path' => 'recovery/'.$this->rid);
+  }  
+}
+
+/**
+ * The Controller for recovery entities
+ */
+class RecoveryController extends EntityAPIController {
+  public function __construct($entityType) {
+    parent::__construct($entityType);
+  }
+
+  /**
+   * Create a recovery - we first set up the values that are specific
+   * to our recovery schema but then also go through the EntityAPIController
+   * function.
+   * 
+   * @param $type
+   *   The machine-readable type of the recovery.
+   *
+   * @return
+   *   A recovery object with all default fields initialized.
+   */
+  public function create(array $values = array()) {
+    $values += array(
+      'rid' => '',
+    );
+    
+    $recovery = parent::create($values);
+    return $recovery;
+  }
+}
+
+/**
+ * The recovery edit form.
+ */
+function recovery_form($form, &$form_state, $recovery) {
+  $form['#recovery'] = $recovery;
+  $form_state['recovery'] = $recovery;
+  $form['rid'] = array(
+    '#type' => 'value',
+    '#value' => isset($recovery->rid) ? $recovery->rid : NULL,
+  );
+  $form['uid'] = array(
+  	'#type' => 'textfield',
+  	'#title' => t('Uid'),
+  	'#default_value' => isset($recovery->uid) ? $recovery->uid : '',
+  	'#required' => TRUE,
+  );
+  $form['type'] = array(
+  	'#type' => 'radios',
+  	'#title' => t('Type'),
+  	'#options' => array('mail' => t('邮箱'), 'mobile' => t('手机')),
+  	'#default_value' => isset($recovery->type) ? $recovery->type : '',
+  	'#required' => TRUE,
+  );
+  $form['code'] = array(
+  	'#type' => 'textfield',
+  	'#title' => t('Code'),
+  	'#default_value' => isset($recovery->code) ? $recovery->code : '',
+  	'#required' => TRUE,
+  );
+  $form['created'] = array(
+  	'#type' => 'textfield',
+  	'#title' => t('Created'),
+  	'#default_value' => isset($recovery->created) ? $recovery->created : '',
+  	'#required' => TRUE,
+  );
+  $form['expiry'] = array(
+  	'#type' => 'textfield',
+  	'#title' => t('Expiry'),
+  	'#default_value' => isset($recovery->expiry) ? $recovery->expiry : '',
+  	'#required' => TRUE,
+  );
+  $form['status'] = array(
+  	'#type' => 'radios',
+  	'#title' => t('Status'),
+  	'#options' => array(0 => t('未验证'), 1 => t('已验证')),
+  	'#default_value' => isset($recovery->status) ? $recovery->status : '',
+  	'#required' => TRUE,
+  );
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+    '#weight' => 40
+  );
+  if (!empty($recovery->rid)) {
+    $form['actions']['delete'] = array(
+      '#type' => 'submit',
+      '#value' => t('Delete'),
+      '#weight' => 45,
+      '#limit_validation_errors' => array(),
+      '#submit' => array('recovery_form_submit_delete'),
+    );    
+  }
+  $form['#validate'][] = 'recovery_form_validate';
+  $form['#submit'][] = 'recovery_form_submit';
+  return $form;
+}
+
+/**
+ * recovery form validate handler.
+ */
+function recovery_form_validate($form, &$form_state) {
+}
+
+/**
+ * recovery form submit handler.
+ */
+function recovery_form_submit($form, &$form_state) {
+  $recovery = &$form_state['recovery'];
+  $recovery->rid = $form_state['values']['rid'];
+  $recovery->uid = $form_state['values']['uid'];
+  $recovery->type = $form_state['values']['type'];
+  $recovery->code = $form_state['values']['code'];
+  $recovery->created = $form_state['values']['created'];
+  $recovery->expiry = $form_state['values']['expiry'];
+  $recovery->status = $form_state['values']['status'];
+  // Notify field widgets.
+  field_attach_submit('recovery', $recovery, $form, $form_state);
+  // Save the recovery
+  recovery_save($recovery);
+  drupal_set_message(t('recovery saved.'));
+  $form_state['redirect'] = 'recovery/'.$recovery->rid;
+}
+
+/**
+ * recovery form submit handler for the delete button.
+ */
+function recovery_form_submit_delete($form, &$form_state) {
+  $recovery = $form_state['recovery'];
+  $form_state['redirect'] = 'recovery/'.$recovery->rid.'/delete';
+}
+
+/**
+ * Recovery settings.
+ */
+function recovery_settings() {
+  $settings = variable_get('recovery_settings', NULL);
+  return $settings ? unserialize($settings) : recovery_default_settings();
+}
+
+/**
+ * Recovery settings.
+ */
+function recovery_default_settings(){
+  $settings = new stdClass();
+  $settings->mail_expiry = 24;
+  $settings->mail_title = '';
+  $settings->mail_body = '';
+  $settings->mobile_expiry = 24;
+  $settings->mobile_body = '';
+  return $settings;
+}
+
+/**
+ * Recovery settings token.
+ */
+function recovery_settings_tokens() {
+  $tokens = array(
+    'mail' => array(
+      'desc' => array(
+        'link' => t('找回密码连接地址'),
+        'site' => t('站点名称'),
+        'username' => t('用户名'),
+      ),
+      'val' => array(
+        'link' => '[link]',
+        'site' => '[site]',    
+        'username' => '[username]',
+      ),
+    ),
+    'mobile' => array(
+      'val' => array(
+        'code' => '[code]',
+        'site' => '[site]',    
+        'username' => '[username]',
+      ),
+      'desc' => array(
+        'code' => t('验证码'),
+        'site' => t('站点名称'),
+        'username' => t('用户名'),
+      ),      
+    ),
+  );
+  return $tokens;
+}
+
+/**
+ * Implements hook_menu_alter().
+ */
+function recovery_menu_alter(&$items) {
+  $items['user/password']['page callback'] = 'drupal_get_form';
+  $items['user/password']['page arguments'] = array('recovery_find');
+  $items['user/password']['access callback'] = 'recovery_access';
+  $items['user/password']['access arguments'] = array('find');
+  $items['user/password']['file'] = 'recovery.pages.inc';
+  $items['user/password']['file path'] = drupal_get_path('module', 'recovery');
+  return $items;
+}
+
+/**
+ * Implement hook_mail().
+ */
+function recovery_mail($key, &$message, $params) {
+  $options = array(
+    'langcode' => $message['language']->language,
+  );
+  switch ($key) {
+    case 'recovery':
+      $message['subject'] = $params['subject'];
+      $message['body'][] = $params['message'];
+      break;
+  }
+}

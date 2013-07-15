@@ -1,0 +1,79 @@
+<?php
+
+
+/**
+ * Implements hook_install().
+ */
+function recovery_install() {
+  drupal_set_message(t('You need to do some '.l(t('config'), 'admin/config/people/recovery').' for Recovery module.'));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function recovery_uninstall() {
+  variable_del('recovery_settings');
+}
+
+/**
+ * Implements hook_schema().
+ */
+function recovery_schema() {
+  $schema['recovery'] = array(
+    'description' => 'The base table for recovery.',
+    'fields' => array(
+      'rid' => array(
+        'description' => 'The primary identifier for a recovery.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'uid' => array(
+        'description' => '{users}.uid.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'type' => array(
+        'description' => 'Type for recovery.',
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'code' => array(
+        'description' => 'Code for recovery.',
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'created' => array(
+        'description' => 'Creation time of sending mail / message.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'expiry' => array(
+        'description' => 'Stores the expiry time of the recovery.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'status' => array(
+        'description' => 'Recovery email callback / message validate pass, 0 => no, 1 => yes',
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'indexes' => array(
+    	'code' => array('code'),
+      'uid'   => array('uid'),
+      'type'   => array('type'),
+    ),
+    'primary key' => array('rid'),
+  );
+  return $schema;
+}

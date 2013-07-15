@@ -1,0 +1,16 @@
+name = Recovery
+description = Recovery module.
+core = 7.x
+package = Account
+configure = admin/structure/recovery
+files[] = recovery.admin.inc
+files[] = recovery.info.inc
+files[] = recovery.module
+files[] = views/recovery.views.inc
+files[] = views/recovery_handler_link_field.inc
+files[] = views/recovery_handler_edit_link_field.inc
+files[] = views/recovery_handler_delete_link_field.inc
+files[] = views/recovery_handler_recovery_operations_field.inc
+dependencies[] = entity
+dependencies[] = views
+dependencies[] = or_phone
